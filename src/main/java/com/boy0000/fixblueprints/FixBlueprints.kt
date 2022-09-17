@@ -6,7 +6,6 @@ import java.io.File
 class FixBlueprints : JavaPlugin() {
     override fun onEnable() {
         // Plugin startup logic
-        saveDefaultConfig()
         fixBluePrints()
     }
 
@@ -15,92 +14,68 @@ class FixBlueprints : JavaPlugin() {
     }
 
     private val blueprintDir = File(this.dataFolder.parent, "/ModelEngine/blueprints/")
-    private val assetTemplateFolder = File(this.dataFolder, "/assets/")
     private fun fixBluePrints() {
-        if (!blueprintDir.exists() || !assetTemplateFolder.exists()) return
-        scanDirectory(blueprintDir)
+        if (blueprintDir.exists())
+            scanDirectory(blueprintDir)
     }
 
     // Recursive function to read all files down until it gets a BBModel file
     private fun scanDirectory(blueprintDir: File) {
         blueprintDir.listFiles()?.forEach blueprint@{ blueprintFile ->
             if (blueprintFile.name.endsWith(".bbmodel")) {
-                readBBModel(blueprintFile)
+                // Quick fix all mob paths and npc paths
+                //blueprintFile.correctInitialTexturePaths()
+                blueprintFile.readBBModel()
             } else scanDirectory(blueprintFile)
         }
     }
 
-    private fun readBBModel(blueprintFile: File) {
-        var blueprint = blueprintFile.readText()
-        /*if (blueprintFile.parent.substringAfterLast("/").endsWith("blocks")) {
+    private fun File.readBBModel() {
+        var blueprint = readText().replace("\\\\", "/")
+        val paths = blueprint.split("{\"path\":\"").drop(1).map { it.substringBefore(",\"id\"") }
+
+        paths.forEachIndexed { i, s ->
+            // Might reuse texture so make sure id is correct just in case
+            if (s.substringAfter("\"id\":\"").substringBefore("\"").toIntOrNull() != i) return@forEachIndexed
+
+            val texturePath = s.substringBefore("\",\"name\"")
+            val newNamespace =
+                texturePath.substringAfter("\"namespace\":\"").substringBefore("\"").substringAfter("assets/")
+                    .substringBefore("/textures")
+            val newTexture = texturePath.substringAfter("\"name\":\"").substringBefore("\"").substringAfterLast("/")
+                .takeIf { it.endsWith(".png") } ?: return@forEachIndexed
+            val newPath = texturePath.substringAfter("\"folder\":\"").substringBefore("\"")
+                .substringAfter("assets/$newNamespace/textures/").substringBefore("/$newTexture")
+            val template =
+                "{\"path\",\"$texturePath\",\"name\":\"$newTexture\",\"folder\":\"$newPath\",\"namespace\":\"$newNamespace\""
             blueprint = blueprint
-                .replace(
-                    "\\\\assets\\\\mineinabyss\\\\textures\\\\block\\\\modelengine\\\\",
-                    "\\\\assets\\\\mineinabyss\\\\textures\\\\blocks\\\\"
-                )
-                .replace(
-                    "\\\\assets\\\\minecraft\\\\textures\\\\block\\\\",
-                    "\\\\assets\\\\mineinabyss\\\\textures\\\\blocks\\\\"
-                )
-                .replace(
-                    "\\\\assets\\\\minecraft\\\\textures\\\\creatures\\\\",
-                    "\\\\assets\\\\mineinabyss\\\\textures\\\\blocks\\\\"
-                )
-
+                .replace(",\"relative_path\":\"$texturePath", ",\"relative_path\":\"$texturePath")
+                .replace("{\"path\":\"$s", template)
+                .replace("\"saved\":false", "\"saved\":true")
         }
-        if (blueprintFile.parent.substringAfterLast("/").endsWith("mobs")) {
-            blueprint = blueprint.replace(
-                "\\\\assets\\\\minecraft\\\\textures\\\\creatures\\\\",
-                "\\\\assets\\\\mineinabyss\\\\textures\\\\mobs\\\\"
-            )
-        }
-        if (blueprintFile.parent.substringAfterLast("/").endsWith("npc")) {
-            blueprint = blueprint.replace(
-                "\\\\assets\\\\minecraft\\\\textures\\\\characters\\\\",
-                "\\\\assets\\\\mineinabyss\\\\textures\\\\characters\\\\"
-            )
-        }*/
-
-        val paths = blueprint.split("\"path\":\"").asSequence().drop(1)
-            .map { it.substringBefore("\",\"id\"").replace("\\\\", "/") }
-            .toList().filter { it.endsWith(".png") }.filter { "assets/mineinabyss" !in it }.toList()
-        // If empty or not in a resourcepack structured folder, skip
-        if (paths.isEmpty() || paths.none { "assets/" in it }) return
-        val namespaces = paths.map { it.substringAfter("assets/").substringBefore("/") }
-        val folders = paths.mapIndexed { i, p ->
-            p.substringAfter("assets/${namespaces[i]}/textures/").substringBeforeLast("/")
-        }
-        val textures = paths.map { it.substringAfterLast("/") }.filter { it.endsWith(".png") && "/" !in it }
-        blueprintFile.writeBBModel(paths, namespaces, folders, textures)
+        writeText(blueprint)
     }
 
-    private fun File.writeBBModel(
-        paths: List<String>,
-        namespaces: List<String>,
-        folders: List<String>,
-        textures: List<String>
-    ) {
-        var blueprint = this.readText()
-
-        paths.forEachIndexed { index, path ->
-            val newPath = "\"path\":\"${path}\","
-            val oldPath = blueprint.substringAfter(newPath).substringBefore("\",\"id\":").replace("\\\\", "/")
-            val oldTexture = oldPath.substringAfter("\"name\":\"").substringBefore("\",\"folder\":")
-            val oldFolder = oldPath.substringAfter("\"name\":\"$oldTexture\",\"folder\":\"").substringBefore("\",\"namespace\":")
-            val oldNamespace = oldPath.substringAfter("\"folder\":\"$oldFolder\",\"namespace\":\"").substringBefore("\",\"id\":").takeIf { it.isNotBlank() } ?: "minecraft"
-            val replacement = oldPath
-                .replace(oldNamespace, namespaces[index])
-                .replace(oldFolder, folders[index])
-                .replace(oldTexture, textures[index])
-            if (nameWithoutExtension == "ashimite") {
-                //println("oldPath: $oldPath")
-                //println("newPath: $newPath")
-                println(oldNamespace)
-                println(oldFolder)
-                //println(oldTexture)
+    private fun File.correctInitialTexturePaths() {
+        val blueprint = readText().replace("\\\\", "/")
+        val parent = parent.replace("\\\\", "/")
+        val assets = "assets/minecraft/textures/"
+        when {
+            parent.endsWith("mobs") ->
+                writeText(blueprint.replace("$assets/creatures", "assets/mineinabyss/textures/mobs"))
+            parent.endsWith("npcs") -> {
+                writeText(blueprint.replace("$assets/characters", "assets/mineinabyss/textures/characters"))
+                writeText(blueprint.replace("$assets/creatures", "assets/mineinabyss/textures/characters"))
             }
-            blueprint = blueprint.replace(oldPath, replacement)
-            //this.writeText(blueprint)
+            parent.endsWith("relics") -> {
+                writeText(blueprint.replace("$assets/items", "assets/mineinabyss/textures/relics"))
+                writeText(blueprint.replace("$assets/relics", "assets/mineinabyss/textures/relics"))
+
+            }
+            parent.endsWith("blocks") -> {
+                writeText(blueprint.replace("$assets/block", "assets/mineinabyss/textures/blocks"))
+                writeText(blueprint.replace("$assets/block/modelengine", "assets/mineinabyss/textures/blocks"))
+            }
         }
     }
 }

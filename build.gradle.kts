@@ -13,12 +13,14 @@ repositories {
     mavenCentral()
     gradlePluginPortal()
     maven("https://papermc.io/repo/repository/maven-public/")
+    maven("https://mvn.lumine.io/repository/maven-public/")
     maven("https://repo.mineinabyss.com/releases")
     maven("https://jitpack.io")
 }
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.19.2-R0.1-SNAPSHOT")
+    compileOnly("com.ticxo.modelengine:api:R3.0.0")
     implementation("me.mattstudios.utils:matt-framework:1.4.6")
 }
 

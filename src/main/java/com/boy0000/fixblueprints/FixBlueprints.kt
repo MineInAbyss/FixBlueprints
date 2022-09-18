@@ -1,5 +1,6 @@
 package com.boy0000.fixblueprints
 
+import com.ticxo.modelengine.api.ModelEngineAPI
 import org.bukkit.Bukkit
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
@@ -9,19 +10,21 @@ import java.io.File
 
 class FixBluePrintCommands : CommandExecutor {
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>?): Boolean {
-        if (label == "fixblueprints" && args?.isNotEmpty() == true)
+        if (label == "fixblueprints")
             fixBlueprints.fixBluePrints()
         return true
     }
 }
 
 val fixBlueprints: FixBlueprints by lazy { Bukkit.getPluginManager().getPlugin("FixBlueprints") as FixBlueprints }
+val modelengine: ModelEngineAPI by lazy { Bukkit.getPluginManager().getPlugin("ModelEngine") as ModelEngineAPI }
 
 class FixBlueprints : JavaPlugin() {
     override fun onEnable() {
         // Plugin startup logic
         getCommand("fixblueprints")?.setExecutor(FixBluePrintCommands())
-        fixBluePrints()
+        //Don't run every startup as its very unnecessary
+        //fixBluePrints()
     }
 
     override fun onDisable() {
@@ -38,6 +41,9 @@ class FixBlueprints : JavaPlugin() {
         if (blueprintDir.exists()) {
             log("<green>Scanning directories...")
             scanDirectory(blueprintDir)
+            if (!modelengine.isEnabled) return
+            modelengine.generator.importModels()
+            scanJSON(blueprintDir)
             log("<green>Finished fixing blueprints!")
         }
     }
@@ -49,9 +55,16 @@ class FixBlueprints : JavaPlugin() {
                 log("<green>Found BBModel file: <gold>${blueprintFile.name}")
                 // Quick fix all mob paths and npc paths
                 blueprintFile.correctInitialTexturePaths()
-
                 blueprintFile.readBBModel()
             } else scanDirectory(blueprintFile)
+        }
+    }
+
+    private fun scanJSON(blueprintDir: File) {
+        blueprintDir.listFiles()?.forEach blueprint@{ blueprintFile ->
+            if (blueprintFile.name.endsWith(".bbmodel"))
+                blueprintFile.readJSON()
+            else scanJSON(blueprintFile)
         }
     }
 
@@ -118,13 +131,17 @@ class FixBlueprints : JavaPlugin() {
             .forEach { s ->
                 val texturePath = s.substringBefore("\",\"name\"")
                 val (namespace, folder, texture) =
-                    texturePath.getNewProperties().takeIf { it.toList().joinToString("").isNotBlank() } ?: return@forEach
+                    texturePath.getNewProperties().takeIf { it.toList().joinToString("").isNotBlank() }
+                        ?: return@forEach
 
-                val jsonDir = File(dataFolder.parent, "/ModelEngine/resource pack/assets/modelengine/models/$nameWithoutExtension")
+                val jsonDir = File(
+                    dataFolder.parent,
+                    "/ModelEngine/resource pack/assets/${modelengine.generator.namespace}/models/$nameWithoutExtension"
+                )
                 if (!jsonDir.exists() || folder.isNotBlank() || texture.isBlank() || namespace.isBlank()) return@forEach
 
                 jsonDir.listFiles()?.filter { it.name.endsWith(".json") }?.forEach { jsonFile ->
-                    log("<green>Fixing JSON file: <gold>${jsonFile.name}")
+                    log("<green>Fixing JSON file: <gold>${jsonFile.name}</gold> for <gold>$name")
                     jsonFile.writeText(
                         jsonFile.readText()
                             .replace("$namespace:/$nameWithoutExtension", "$namespace:$nameWithoutExtension")

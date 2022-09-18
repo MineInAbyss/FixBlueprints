@@ -9,7 +9,7 @@ import java.io.File
 
 class FixBluePrintCommands : CommandExecutor {
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>?): Boolean {
-        if (label == "fixblueprints")
+        if (label == "fixblueprints" && args?.isNotEmpty() == true)
             fixBlueprints.fixBluePrints()
         return true
     }
@@ -49,6 +49,7 @@ class FixBlueprints : JavaPlugin() {
                 log("<green>Found BBModel file: <gold>${blueprintFile.name}")
                 // Quick fix all mob paths and npc paths
                 blueprintFile.correctInitialTexturePaths()
+
                 blueprintFile.readBBModel()
             } else scanDirectory(blueprintFile)
         }
@@ -58,14 +59,12 @@ class FixBlueprints : JavaPlugin() {
         var blueprint = readText().replace("\\\\", "/")
         val paths = blueprint.split("{\"path\":\"").drop(1).map { it.substringBefore(",\"id\"") }
 
-        paths.forEachIndexed { i, s ->
+        paths.forEach { s ->
             val texturePath = s.substringBefore("\",\"name\"")
-            val newNamespace = texturePath.substringAfter("assets/").substringBefore("/textures")
-            val newTexture = texturePath.substringAfterLast("/").takeIf { it.endsWith(".png") } ?: return@forEachIndexed
-            val newPath = texturePath.substringAfter("assets/$newNamespace/textures/").substringBefore("/$newTexture")
-                .takeIf { !it.endsWith(".png") } ?: ""
+            val (newNamespace, newFolder, newTexture) =
+                texturePath.getNewProperties().takeIf { it.toList().joinToString("").isNotBlank() } ?: return@forEach
             val template =
-                "{\"path\":\"$texturePath\",\"name\":\"$newTexture\",\"folder\":\"$newPath\",\"namespace\":\"$newNamespace\""
+                "{\"path\":\"$texturePath\",\"name\":\"$newTexture\",\"folder\":\"$newFolder\",\"namespace\":\"$newNamespace\""
 
             blueprint = blueprint
                 .replace(",\"relative_path\":\"$s", ",\"relative_path\":\"$texturePath")
@@ -73,6 +72,7 @@ class FixBlueprints : JavaPlugin() {
                 .replace("\"saved\":false", "\"saved\":true")
         }
         writeText(blueprint)
+        readJSON()
         log("<green>Fixed <italic>$name\n")
     }
 
@@ -109,5 +109,35 @@ class FixBlueprints : JavaPlugin() {
             }
         }
         writeText(blueprint)
+    }
+
+    // Fixes instances where the texture is in assets/namespace/textures/file.png which makes json malformatted
+    private fun File.readJSON() {
+        readText().replace("\\\\", "/").split("{\"path\":\"")
+            .drop(1).map { it.substringBefore(",\"id\"") }
+            .forEach { s ->
+                val texturePath = s.substringBefore("\",\"name\"")
+                val (namespace, folder, texture) =
+                    texturePath.getNewProperties().takeIf { it.toList().joinToString("").isNotBlank() } ?: return@forEach
+
+                val jsonDir = File(dataFolder.parent, "/ModelEngine/resource pack/assets/modelengine/models/$nameWithoutExtension")
+                if (!jsonDir.exists() || folder.isNotBlank() || texture.isBlank() || namespace.isBlank()) return@forEach
+
+                jsonDir.listFiles()?.filter { it.name.endsWith(".json") }?.forEach { jsonFile ->
+                    log("<green>Fixing JSON file: <gold>${jsonFile.name}")
+                    jsonFile.writeText(
+                        jsonFile.readText()
+                            .replace("$namespace:/$nameWithoutExtension", "$namespace:$nameWithoutExtension")
+                    )
+                }
+            }
+    }
+
+    private fun String.getNewProperties(): Triple<String, String, String> {
+        val newNamespace = substringAfter("assets/").substringBefore("/textures")
+        val newTexture = substringAfterLast("/").takeIf { it.endsWith(".png") } ?: return Triple("", "", "")
+        val newPath = substringAfter("assets/$newNamespace/textures/").substringBefore("/$newTexture")
+            .takeIf { !it.endsWith(".png") } ?: ""
+        return Triple(newNamespace, newPath, newTexture)
     }
 }

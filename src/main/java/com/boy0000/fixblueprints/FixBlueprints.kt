@@ -16,6 +16,7 @@ class FixBluePrintCommands : CommandExecutor {
 }
 
 val fixBlueprints: FixBlueprints by lazy { Bukkit.getPluginManager().getPlugin("FixBlueprints") as FixBlueprints }
+
 class FixBlueprints : JavaPlugin() {
     override fun onEnable() {
         // Plugin startup logic
@@ -62,7 +63,9 @@ class FixBlueprints : JavaPlugin() {
             val newNamespace = texturePath.substringAfter("assets/").substringBefore("/textures")
             val newTexture = texturePath.substringAfterLast("/").takeIf { it.endsWith(".png") } ?: return@forEachIndexed
             val newPath = texturePath.substringAfter("assets/$newNamespace/textures/").substringBefore("/$newTexture")
-            val template = "{\"path\":\"$texturePath\",\"name\":\"$newTexture\",\"folder\":\"$newPath\",\"namespace\":\"$newNamespace\""
+                .takeIf { !it.endsWith(".png") } ?: ""
+            val template =
+                "{\"path\":\"$texturePath\",\"name\":\"$newTexture\",\"folder\":\"$newPath\",\"namespace\":\"$newNamespace\""
 
             blueprint = blueprint
                 .replace(",\"relative_path\":\"$s", ",\"relative_path\":\"$texturePath")
@@ -74,31 +77,37 @@ class FixBlueprints : JavaPlugin() {
     }
 
     private fun File.correctInitialTexturePaths() {
-        val blueprint = readText().replace("\\\\", "/")
+        var blueprint = readText().replace("\\\\", "/")
         val parent = parent.replace("\\\\", "/")
         val assets = "assets/minecraft/textures"
         when {
             parent.endsWith("mobs") -> {
                 log("<yellow>Correcting initial texture paths...")
-                writeText(blueprint.replace("$assets/creatures", "assets/mineinabyss/textures/mobs"))
+                blueprint = blueprint.replace("$assets/creatures", "assets/mineinabyss/textures/mobs")
             }
 
             parent.endsWith("npcs") -> {
                 log("<yellow>Correcting initial texture paths...")
-                writeText(blueprint.replace("$assets/characters", "assets/mineinabyss/textures/characters"))
-                writeText(blueprint.replace("$assets/creatures", "assets/mineinabyss/textures/characters"))
+                blueprint = blueprint
+                    .replace("$assets/characters", "assets/mineinabyss/textures/characters")
+                    .replace("$assets/creatures", "assets/mineinabyss/textures/characters")
             }
+
             parent.endsWith("relics") -> {
                 log("<yellow>Correcting initial texture paths...")
-                writeText(blueprint.replace("$assets/items", "assets/mineinabyss/textures/relics"))
-                writeText(blueprint.replace("$assets/relics", "assets/mineinabyss/textures/relics"))
+                blueprint = blueprint
+                    .replace("$assets/items", "assets/mineinabyss/textures/relics")
+                    .replace("$assets/relics", "assets/mineinabyss/textures/relics")
 
             }
+
             parent.endsWith("blocks") -> {
                 log("<yellow>Correcting initial texture paths...")
-                writeText(blueprint.replace("$assets/block", "assets/mineinabyss/textures/blocks"))
-                writeText(blueprint.replace("$assets/block/modelengine", "assets/mineinabyss/textures/blocks"))
+                blueprint = blueprint
+                    .replace("$assets/block", "assets/mineinabyss/textures/blocks")
+                    .replace("$assets/block/modelengine", "assets/mineinabyss/textures/blocks")
             }
         }
+        writeText(blueprint)
     }
 }

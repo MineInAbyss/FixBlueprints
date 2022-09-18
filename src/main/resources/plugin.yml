@@ -4,3 +4,7 @@ main: com.boy0000.fixblueprints.FixBlueprints
 api-version: 1.16
 depend:
   - ModelEngine
+
+commands:
+  fixblueprints:
+    usage: /fixblueprints
